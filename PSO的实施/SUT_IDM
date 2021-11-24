@@ -1,0 +1,129 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Author  : Zhang He
+# @File    : idm.py
+# @Contact : 2110194@tongji.edu.cn
+# @School  : Tongji University
+
+import matplotlib.pyplot as plt
+# import lib
+import numpy as np
+import pandas as pd
+from pandas.plotting import parallel_coordinates
+
+
+class IDM:
+    def __init__(self, scenario_parameters_list, collision=False, plot=False,
+                 ttc=1.5,
+                 a_bound=5.0, exv=29.08, t=1.6, a=2.62, b=2.67, gama=4, s0=1.0,
+                 s1=2.0):
+        """
+        :param scenario_parameters_list: kay paramters
+        :param ttc: ttc to indentify unsafe scenarios
+        :param a_bound: a hard-coded cap on the deceleration
+        :param exv: Desired velocity
+        :param t: Safe time headway
+        :param a: Maximum acceleration
+        :param b: Desired deceleration
+        :param gama: Acceleration exponent
+        :param s0: Jam distance
+        :param s1: Jam distance
+        """
+        self.scenario_matrix = np.array([])
+        self.scenario_parameters_list = scenario_parameters_list
+        self.plot_key = plot
+        self.ttc = ttc
+        self.a_bound = a_bound
+        self.exv = exv
+        self.t = t
+        self.a = a
+        self.b = b
+        self.gama = gama
+        self.s0 = s0
+        self.s1 = s1
+        self.collision = collision
+        plt.ion()
+
+    def _calculate_a(self, v, fv, dis):
+        """Calculate the acceleration of the HAV
+        :param v: the initial speed of the HAV
+        :param fv: the initial speed of the leading vehicle
+        :param dis: the initial distance between them
+        :return:
+        """
+        # Desired distance
+        s_ = self.s0 + self.s1 * (v / self.exv) ** 0.5 + self.t * v + v * (
+                v - fv) / 2 / (self.a * self.b) ** 0.5
+                
+        # Acceleration of the HAV
+        a_idm = self.a * (1 - (v / self.exv) ** self.gama - ((s_ / (dis-2.5)) ** 2))
+        
+        # A hard-coded cap on the deceleration
+        a_idm = np.clip(a_idm, -self.a_bound, self.a_bound)
+        return a_idm
+
+    def record(self, scenario, result):
+        append_matrix = np.concatenate((scenario, result.reshape(-1, 1)),
+                                       axis=1)
+        self.scenario_matrix = np.append(self.scenario_matrix, append_matrix)
+
+    def plot(self):
+        plt.cla()
+        plot_matrix = pd.DataFrame(self.scenario_matrix.reshape(-1, len(
+            self.scenario_parameters_list) + 1), columns=(
+                self.scenario_parameters_list + ['result']))
+        parallel_coordinates(plot_matrix, 'result')
+        plt.pause(0.0000001)
+        plt.show()
+
+    def test(self, sample):
+        """Getting the testing results
+        :param sample: concrete scenarios
+        :return:
+        """
+        result = np.zeros([sample.shape[0]])
+        [v, dif_v, dis] = sample[:, 0], sample[:, 1], sample[:, 2]
+        fv = v - dif_v
+        dis[dis <= 0] = 0.001
+        v[v <= 0] = 0
+        for i in range(10):
+            a = self._calculate_a(v, fv, dis)
+            v = v + a * 0.1
+            v[v < 0] = 0
+            dis = dis - 0.1 * (v - fv)
+            dis[dis <= 0] = 0.001
+            for j in range(sample.shape[0]):
+                if self.collision:
+                    if dis[j] < 2.5:
+                        result[j] = 1
+                else:
+                    if v[j] > fv[j] and dis[j] / (v[j] - fv[j]) < self.ttc:
+                        result[j] = 1
+        if self.plot_key:
+            self.record(sample, result)
+            self.plot()
+        return result
+
+    def test_one(self, sample):
+        result = 0
+        [fv, dif_v, dis] = sample[0], sample[1], sample[2]
+        v = fv - dif_v
+        if dis < 0:
+            dis = 0.001
+        if v < 0:
+            v = 0
+        for i in range(10):
+            a = self._calculate_a(v, fv, dis)
+            v = v + a * 0.1
+            if v < 0:
+                v = 0
+            dis = dis - 0.1 * (v - fv)
+            if dis < 0:
+                dis = 0.001
+            if self.collision:
+                if dis < 2.5:
+                    result = 1
+            else:
+                if v > fv and dis / (v - fv) < self.ttc:
+                    result = 1
+        return result
