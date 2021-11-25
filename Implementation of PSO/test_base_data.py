@@ -15,8 +15,8 @@ class testBaseData:
         print(self.data.shape)
     def test(self,sample):
         sample_frame = pd.DataFrame(sample)
-        sample_frame.columns = self.name #变成dataframe格式
-        sample_frame = sample_frame.merge(self.data,how='left')#left 左连接， 左侧取全部信息，右侧没有的变为NAN”
+        sample_frame.columns = self.name 
+        sample_frame = sample_frame.merge(self.data,how='left')
         return np.array(sample_frame['result'])
 
 if __name__ == "__main__":
